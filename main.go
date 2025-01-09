@@ -13,6 +13,8 @@ import (
 )
 
 const (
+	// Size is the number of histograms
+	Size = 8
 	// S is the scaling factor for the softmax
 	S = 1.0 - 1e-300
 )
@@ -76,6 +78,7 @@ func (m Matrix) Add(n Matrix) Matrix {
 	return o
 }
 
+// Softmax calculates the softmax of the matrix rows
 func (m Matrix) Softmax(T float64) Matrix {
 	output := NewMatrix(m.Cols, m.Rows)
 	max := 0.0
@@ -96,6 +99,19 @@ func (m Matrix) Softmax(T float64) Matrix {
 		for _, value := range values {
 			output.Data = append(output.Data, value/sum)
 		}
+	}
+	return output
+}
+
+// Entropy calculates the entropy of the matrix rows
+func (m Matrix) Entropy() Matrix {
+	output := NewMatrix(m.Rows, 1)
+	for i := 0; i < len(m.Data); i += m.Cols {
+		entropy := 0.0
+		for _, value := range m.Data[i : i+m.Cols] {
+			entropy += value * math.Log(value)
+		}
+		output.Data = append(output.Data, -entropy)
 	}
 	return output
 }
@@ -166,6 +182,94 @@ func SelfAttention(Q, K, V Matrix) Matrix {
 	return o
 }
 
+// Markov is a markov model
+type Markov [2]byte
+
+// Histogram is a buffered histogram
+type Histogram struct {
+	Vector [256]byte
+	Buffer [128]byte
+	Index  int
+	Size   int
+}
+
+// NewHistogram make a new histogram
+func NewHistogram(size int) Histogram {
+	h := Histogram{
+		Size: size,
+	}
+	return h
+}
+
+// Add adds a symbol to the histogram
+func (h *Histogram) Add(s byte) {
+	index := (h.Index + 1) % h.Size
+	if symbol := h.Buffer[index]; h.Vector[symbol] > 0 {
+		h.Vector[symbol]--
+	}
+	h.Buffer[index] = s
+	h.Vector[s]++
+	h.Index = index
+}
+
+// Mixer mixes several histograms together
+type Mixer struct {
+	Markov     Markov
+	Histograms []Histogram
+}
+
+// NewMixer makes a new mixer
+func NewMixer() Mixer {
+	histograms := make([]Histogram, Size)
+	histograms[0] = NewHistogram(1)
+	histograms[1] = NewHistogram(2)
+	histograms[2] = NewHistogram(4)
+	histograms[3] = NewHistogram(8)
+	histograms[4] = NewHistogram(16)
+	histograms[5] = NewHistogram(32)
+	histograms[6] = NewHistogram(64)
+	histograms[7] = NewHistogram(128)
+	return Mixer{
+		Histograms: histograms,
+	}
+}
+
+func (m Mixer) Copy() Mixer {
+	histograms := make([]Histogram, Size)
+	for i := range m.Histograms {
+		histograms[i] = m.Histograms[i]
+	}
+	return Mixer{
+		Markov:     m.Markov,
+		Histograms: histograms,
+	}
+}
+
+// Add adds a symbol to a mixer
+func (m *Mixer) Add(s byte) {
+	for i := range m.Histograms {
+		m.Histograms[i].Add(s)
+	}
+	m.Markov[1] = m.Markov[0]
+	m.Markov[0] = s
+}
+
+// Mix mixes the histograms outputting a matrix
+func (m Mixer) Mix() Matrix {
+	x := NewMatrix(256, Size)
+	for i := range m.Histograms {
+		sum := 0.0
+		for _, v := range m.Histograms[i].Vector {
+			sum += float64(v)
+		}
+		for _, v := range m.Histograms[i].Vector {
+			x.Data = append(x.Data, float64(v)/sum)
+		}
+	}
+	y := SelfAttention(x, x, x)
+	return y
+}
+
 //go:embed 84.txt.utf-8.bz2
 var Data embed.FS
 
@@ -180,5 +284,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	_ = data
+	m := NewMixer()
+	for _, v := range data {
+		m.Add(v)
+	}
 }
