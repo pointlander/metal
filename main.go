@@ -293,37 +293,56 @@ func main() {
 	}
 	fmt.Println("valid", len(valid))
 
+	vdb := make(map[Markov][256]int)
 	m := NewMixer()
 	for _, v := range data {
+		vector := m.Mix()
+		distro := vector.Softmax(1)
+		markov := Markov{}
+		max := 0.0
+		for i := 0; i < distro.Rows; i++ {
+			for j := 0; j < distro.Cols; j++ {
+				if value := distro.Data[i*distro.Cols+j]; value > max {
+					markov[1] = markov[0]
+					markov[0], max = byte(j), value
+				}
+			}
+		}
+		dist := vdb[markov]
+		dist[v]++
+		vdb[markov] = dist
 		m.Add(v)
 	}
 	for j := 0; j < 33; j++ {
 		output := m.Mix()
-		distributions := output.Softmax(.08)
-		entropy := distributions.Entropy()
-		lowest, max := 0, 0.0
-		for i, v := range entropy.Data {
-			if v > max {
-				lowest, max = i, v
-			}
-		}
-		symbol := 0
-		for {
-			sum := 0.0
-			selected := rng.Float64()
-
-			for i := 0; i < distributions.Cols; i++ {
-				sum += distributions.Data[lowest*distributions.Cols+i]
-				if selected < sum {
-					symbol = i
-					break
+		distro := output.Softmax(1)
+		markov := Markov{}
+		max := 0.0
+		for i := 0; i < distro.Rows; i++ {
+			for j := 0; j < distro.Cols; j++ {
+				if value := distro.Data[i*distro.Cols+j]; value > max {
+					markov[1] = markov[0]
+					markov[0], max = byte(j), value
 				}
 			}
-			if valid[byte(symbol)] {
+		}
+		dist := vdb[markov]
+		values, sum := make([]float64, len(dist)), 0.0
+		for _, v := range dist {
+			sum += float64(v)
+		}
+		for i, v := range dist {
+			values[i] = float64(v) / sum
+		}
+		sum, symbol, selection := 0.0, 0, rng.Float64()
+		for i, v := range values {
+			sum += v
+			if selection < sum {
+				symbol = i
 				break
 			}
 		}
-		fmt.Printf("%d %d %s\n", lowest, symbol, strconv.Quote(string(byte(symbol))))
+		fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
 		m.Add(byte(symbol))
 	}
 }
