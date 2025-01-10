@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
+	"strconv"
 )
 
 const (
@@ -274,6 +276,7 @@ func (m Mixer) Mix() Matrix {
 var Data embed.FS
 
 func main() {
+	rng := rand.New(rand.NewSource(1))
 	file, err := Data.Open("84.txt.utf-8.bz2")
 	if err != nil {
 		panic(err)
@@ -284,8 +287,43 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	valid := make(map[byte]bool)
+	for _, v := range data {
+		valid[v] = true
+	}
+	fmt.Println("valid", len(valid))
+
 	m := NewMixer()
 	for _, v := range data {
 		m.Add(v)
+	}
+	for j := 0; j < 33; j++ {
+		output := m.Mix()
+		distributions := output.Softmax(1)
+		entropy := distributions.Entropy()
+		lowest, min := 0, math.MaxFloat64
+		for i, v := range entropy.Data {
+			if v < min {
+				lowest, min = i, v
+			}
+		}
+		symbol := 0
+		for {
+			sum := 0.0
+			selected := rng.Float64()
+
+			for i := 0; i < distributions.Cols; i++ {
+				sum += distributions.Data[lowest*distributions.Cols+i]
+				if selected < sum {
+					symbol = i
+					break
+				}
+			}
+			if valid[byte(symbol)] {
+				break
+			}
+		}
+		fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
+		m.Add(byte(symbol))
 	}
 }
