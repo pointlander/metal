@@ -299,12 +299,12 @@ func main() {
 	}
 	for j := 0; j < 33; j++ {
 		output := m.Mix()
-		distributions := output.Softmax(1)
+		distributions := output.Softmax(.08)
 		entropy := distributions.Entropy()
-		lowest, min := 0, math.MaxFloat64
+		lowest, max := 0, 0.0
 		for i, v := range entropy.Data {
-			if v < min {
-				lowest, min = i, v
+			if v > max {
+				lowest, max = i, v
 			}
 		}
 		symbol := 0
@@ -323,7 +323,7 @@ func main() {
 				break
 			}
 		}
-		fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
+		fmt.Printf("%d %d %s\n", lowest, symbol, strconv.Quote(string(byte(symbol))))
 		m.Add(byte(symbol))
 	}
 }
