@@ -186,7 +186,7 @@ func SelfAttention(Q, K, V Matrix) Matrix {
 }
 
 // Markov is a markov model
-type Markov [2]byte
+type Markov [3]byte
 
 // Histogram is a buffered histogram
 type Histogram struct {
@@ -253,6 +253,7 @@ func (m *Mixer) Add(s byte) {
 	for i := range m.Histograms {
 		m.Histograms[i].Add(s)
 	}
+	m.Markov[2] = m.Markov[1]
 	m.Markov[1] = m.Markov[0]
 	m.Markov[0] = s
 }
@@ -311,6 +312,7 @@ func main() {
 		for i := 0; i < distro.Rows; i++ {
 			for j := 0; j < distro.Cols; j++ {
 				if value := distro.Data[i*distro.Cols+j]; value > max {
+					markov[2] = markov[1]
 					markov[1] = markov[0]
 					markov[0], max = byte(j), value
 				}
@@ -319,8 +321,13 @@ func main() {
 		dist := vdb[markov]
 		dist[v]++
 		vdb[markov] = dist
+		markov[2] = 0
+		dist = vdb[markov]
+		dist[v]++
+		vdb[markov] = dist
 		m.Add(v)
 	}
+	fmt.Println("len(vdb)", len(vdb))
 
 	m = NewMixer()
 	for _, v := range []byte(*FlagQuery) {
@@ -336,12 +343,17 @@ func main() {
 		for i := 0; i < distro.Rows; i++ {
 			for j := 0; j < distro.Cols; j++ {
 				if value := distro.Data[i*distro.Cols+j]; value > max {
+					markov[2] = markov[1]
 					markov[1] = markov[0]
 					markov[0], max = byte(j), value
 				}
 			}
 		}
-		dist := vdb[markov]
+		dist, found := vdb[markov]
+		if !found {
+			markov[2] = 0
+			dist = vdb[markov]
+		}
 		values, sum := make([]float64, len(dist)), 0.0
 		for _, v := range dist {
 			sum += float64(v)
