@@ -7,6 +7,7 @@ package main
 import (
 	"compress/bzip2"
 	"embed"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -275,7 +276,14 @@ func (m Mixer) Mix() Matrix {
 //go:embed 84.txt.utf-8.bz2
 var Data embed.FS
 
+var (
+	// FlagQuery is the query string
+	FlagQuery = flag.String("query", "What is the meaning of life?", "query flag")
+)
+
 func main() {
+	flag.Parse()
+
 	rng := rand.New(rand.NewSource(1))
 	file, err := Data.Open("84.txt.utf-8.bz2")
 	if err != nil {
@@ -313,6 +321,13 @@ func main() {
 		vdb[markov] = dist
 		m.Add(v)
 	}
+
+	m = NewMixer()
+	for _, v := range []byte(*FlagQuery) {
+		m.Add(v)
+	}
+
+	result := make([]byte, 0, 8)
 	for j := 0; j < 33; j++ {
 		output := m.Mix()
 		distro := output.Softmax(1)
@@ -344,5 +359,7 @@ func main() {
 		}
 		fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
 		m.Add(byte(symbol))
+		result = append(result, byte(symbol))
 	}
+	fmt.Println(string(result))
 }
