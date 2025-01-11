@@ -119,6 +119,22 @@ func (m Matrix) Entropy() Matrix {
 	return output
 }
 
+// Sum sums the rows of a matrix
+func (m Matrix) Sum() Matrix {
+	o := Matrix{
+		Cols: m.Cols,
+		Rows: 1,
+		Data: make([]float64, m.Cols),
+	}
+	for i := 0; i < m.Rows; i++ {
+		offset := i * m.Cols
+		for j := range o.Data {
+			o.Data[j] += m.Data[offset+j]
+		}
+	}
+	return o
+}
+
 // T tramsposes a matrix
 func (m Matrix) T() Matrix {
 	o := Matrix{
@@ -306,7 +322,7 @@ func main() {
 	m := NewMixer()
 	for _, v := range data {
 		vector := m.Mix()
-		distro := vector.Softmax(1)
+		distro := vector.Sum().Softmax(1)
 		markov := Markov{}
 		max := 0.0
 		for i := 0; i < distro.Rows; i++ {
@@ -337,7 +353,7 @@ func main() {
 	result := make([]byte, 0, 8)
 	for j := 0; j < 33; j++ {
 		output := m.Mix()
-		distro := output.Softmax(1)
+		distro := output.Sum().Softmax(1)
 		markov := Markov{}
 		max := 0.0
 		for i := 0; i < distro.Rows; i++ {
