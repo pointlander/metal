@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"sort"
 	"strconv"
 )
 
@@ -301,6 +302,12 @@ var (
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query flag")
 )
 
+// Pair is a pair of values
+type Pair struct {
+	Symbol byte
+	Rank   float64
+}
+
 func main() {
 	flag.Parse()
 
@@ -326,17 +333,17 @@ func main() {
 	for _, v := range data {
 		vector := m.Mix()
 		distro := vector.Sum().Softmax(1)
+		pairs := make([]Pair, distro.Cols)
+		for i, v := range distro.Data {
+			pairs[i].Symbol = byte(i)
+			pairs[i].Rank = v
+		}
+		sort.Slice(pairs, func(i, j int) bool {
+			return pairs[i].Rank > pairs[j].Rank
+		})
 		markov := Markov{}
-		max := 0.0
-		for i := 0; i < distro.Rows; i++ {
-			for j := 0; j < distro.Cols; j++ {
-				if value := distro.Data[i*distro.Cols+j]; value > max {
-					for k := Order; k > 0; k-- {
-						markov[k] = markov[k-1]
-					}
-					markov[0], max = byte(j), value
-				}
-			}
+		for i := range markov {
+			markov[i] = pairs[i].Symbol
 		}
 		dist := vdb[markov]
 		dist[v]++
@@ -360,17 +367,17 @@ func main() {
 	for j := 0; j < 33; j++ {
 		output := m.Mix()
 		distro := output.Sum().Softmax(1)
+		pairs := make([]Pair, distro.Cols)
+		for i, v := range distro.Data {
+			pairs[i].Symbol = byte(i)
+			pairs[i].Rank = v
+		}
+		sort.Slice(pairs, func(i, j int) bool {
+			return pairs[i].Rank > pairs[j].Rank
+		})
 		markov := Markov{}
-		max := 0.0
-		for i := 0; i < distro.Rows; i++ {
-			for j := 0; j < distro.Cols; j++ {
-				if value := distro.Data[i*distro.Cols+j]; value > max {
-					for k := Order; k > 0; k-- {
-						markov[k] = markov[k-1]
-					}
-					markov[0], max = byte(j), value
-				}
-			}
+		for i := range markov {
+			markov[i] = pairs[i].Symbol
 		}
 		dist, found := vdb[markov]
 		for i := Order; i > 0 && !found; i-- {
