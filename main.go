@@ -18,6 +18,8 @@ import (
 const (
 	// Size is the number of histograms
 	Size = 8
+	// Order is the order of the markov model
+	Order = 4
 	// S is the scaling factor for the softmax
 	S = 1.0 - 1e-300
 )
@@ -202,7 +204,7 @@ func SelfAttention(Q, K, V Matrix) Matrix {
 }
 
 // Markov is a markov model
-type Markov [3]byte
+type Markov [Order + 1]byte
 
 // Histogram is a buffered histogram
 type Histogram struct {
@@ -269,8 +271,9 @@ func (m *Mixer) Add(s byte) {
 	for i := range m.Histograms {
 		m.Histograms[i].Add(s)
 	}
-	m.Markov[2] = m.Markov[1]
-	m.Markov[1] = m.Markov[0]
+	for k := Order; k > 0; k-- {
+		m.Markov[k] = m.Markov[k-1]
+	}
 	m.Markov[0] = s
 }
 
@@ -328,8 +331,9 @@ func main() {
 		for i := 0; i < distro.Rows; i++ {
 			for j := 0; j < distro.Cols; j++ {
 				if value := distro.Data[i*distro.Cols+j]; value > max {
-					markov[2] = markov[1]
-					markov[1] = markov[0]
+					for k := Order; k > 0; k-- {
+						markov[k] = markov[k-1]
+					}
 					markov[0], max = byte(j), value
 				}
 			}
@@ -337,10 +341,12 @@ func main() {
 		dist := vdb[markov]
 		dist[v]++
 		vdb[markov] = dist
-		markov[2] = 0
-		dist = vdb[markov]
-		dist[v]++
-		vdb[markov] = dist
+		for j := Order; j > 0; j-- {
+			markov[j] = 0
+			dist = vdb[markov]
+			dist[v]++
+			vdb[markov] = dist
+		}
 		m.Add(v)
 	}
 	fmt.Println("len(vdb)", len(vdb))
@@ -359,16 +365,17 @@ func main() {
 		for i := 0; i < distro.Rows; i++ {
 			for j := 0; j < distro.Cols; j++ {
 				if value := distro.Data[i*distro.Cols+j]; value > max {
-					markov[2] = markov[1]
-					markov[1] = markov[0]
+					for k := Order; k > 0; k-- {
+						markov[k] = markov[k-1]
+					}
 					markov[0], max = byte(j), value
 				}
 			}
 		}
 		dist, found := vdb[markov]
-		if !found {
-			markov[2] = 0
-			dist = vdb[markov]
+		for i := Order; i > 0 && !found; i-- {
+			markov[i] = 0
+			dist, found = vdb[markov]
 		}
 		values, sum := make([]float64, len(dist)), 0.0
 		for _, v := range dist {
