@@ -20,7 +20,7 @@ const (
 	// Size is the number of histograms
 	Size = 8
 	// Order is the order of the markov model
-	Order = 4
+	Order = 7
 	// S is the scaling factor for the softmax
 	S = 1.0 - 1e-300
 )
