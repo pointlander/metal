@@ -435,11 +435,11 @@ func Mach2() {
 	}
 
 	rng := rand.New(rand.NewSource(1))
-	model := [256][512]float32{}
-	fmt.Println(256 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
+	model := [1024][512]float32{}
+	fmt.Println(1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 	for i := range model {
 		for j := 0; j < 256; j++ {
-			model[i][j] = float32(math.Abs(rng.NormFloat64()))
+			model[i][j] = rng.Float32()
 		}
 	}
 
@@ -457,6 +457,41 @@ func Mach2() {
 		model[index][int(v)+256]++
 		m.Add(v)
 	}
+
+	m = NewMixer()
+	for _, v := range []byte(*FlagQuery) {
+		m.Add(v)
+	}
+
+	result := make([]byte, 0, 8)
+	for i := 0; i < 33; i++ {
+		vector := m.Mix()
+		distro := vector.Sum().Softmax(1)
+		index, max := 0, float32(0.0)
+		for i := range model {
+			cs := CS(model[i][:256], distro.Data)
+			if cs > max {
+				max, index = cs, i
+			}
+		}
+		sum := float32(0.0)
+		for _, v := range model[index] {
+			sum += v
+		}
+		total, selected, symbol := float32(0.0), rng.Float32(), 0
+		for i, v := range model[index] {
+			total += v
+			if selected < total/sum {
+				symbol = i
+				break
+			}
+		}
+
+		fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
+		m.Add(byte(symbol))
+		result = append(result, byte(symbol))
+	}
+	fmt.Println(string(result))
 }
 
 func main() {
