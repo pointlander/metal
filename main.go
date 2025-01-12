@@ -298,6 +298,10 @@ func (m Mixer) Mix() Matrix {
 var Data embed.FS
 
 var (
+	// FlagMach1 is the mach 1 version
+	FlagMach1 = flag.Bool("mach1", false, "mach 1 version")
+	// FlagMach2 is the mach 2 version
+	FlagMach2 = flag.Bool("mach2", false, "mach 2 version")
 	// FlagQuery is the query string
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query flag")
 )
@@ -308,9 +312,8 @@ type Pair struct {
 	Rank   float64
 }
 
-func main() {
-	flag.Parse()
-
+// Mach1 is the mach 1 model
+func Mach1() {
 	rng := rand.New(rand.NewSource(1))
 	file, err := Data.Open("84.txt.utf-8.bz2")
 	if err != nil {
@@ -404,4 +407,21 @@ func main() {
 		result = append(result, byte(symbol))
 	}
 	fmt.Println(string(result))
+}
+
+// Mach2 is the mach 2 mode
+func Mach2() {
+
+}
+
+func main() {
+	flag.Parse()
+
+	if *FlagMach1 {
+		Mach1()
+		return
+	} else if *FlagMach2 {
+		Mach2()
+		return
+	}
 }
