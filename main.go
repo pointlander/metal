@@ -409,9 +409,54 @@ func Mach1() {
 	fmt.Println(string(result))
 }
 
+// CS is float32 cosine similarity
+func CS(t []float32, vector []float64) float32 {
+	aa, bb, ab := 0.0, 0.0, 0.0
+	for i := range vector {
+		a, b := float64(vector[i]), float64(t[i])
+		aa += a * a
+		bb += b * b
+		ab += a * b
+	}
+	return float32(ab / (math.Sqrt(aa) * math.Sqrt(bb)))
+}
+
 // Mach2 is the mach 2 mode
 func Mach2() {
+	file, err := Data.Open("84.txt.utf-8.bz2")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	reader := bzip2.NewReader(file)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
 
+	rng := rand.New(rand.NewSource(1))
+	model := [256][512]float32{}
+	fmt.Println(256 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
+	for i := range model {
+		for j := 0; j < 256; j++ {
+			model[i][j] = float32(math.Abs(rng.NormFloat64()))
+		}
+	}
+
+	m := NewMixer()
+	for _, v := range data {
+		vector := m.Mix()
+		distro := vector.Sum().Softmax(1)
+		index, max := 0, float32(0.0)
+		for i := range model {
+			cs := CS(model[i][:256], distro.Data)
+			if cs > max {
+				max, index = cs, i
+			}
+		}
+		model[index][int(v)+256]++
+		m.Add(v)
+	}
 }
 
 func main() {
