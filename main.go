@@ -451,7 +451,7 @@ func Mach2() {
 	}
 	done := make(chan Result, 8)
 	process := func(symbol byte, vector Matrix) {
-		query := vector.Sum().Softmax(1).Data
+		query := vector.Sum().Data
 		index, max := 0, float32(0.0)
 		for i := range model {
 			cs := CS(model[i][:256], query)
@@ -468,7 +468,8 @@ func Mach2() {
 	m, index, flight := NewMixer(), 0, 0
 	for index < len(data) && flight < cpus {
 		symbol := data[index]
-		go process(symbol, m.Mix())
+		vector := m.Mix()
+		go process(symbol, vector)
 		m.Add(symbol)
 		flight++
 		index++
@@ -479,7 +480,8 @@ func Mach2() {
 		model[result.Index][256+int(result.Symbol)]++
 
 		symbol := data[index]
-		go process(symbol, m.Mix())
+		vector := m.Mix()
+		go process(symbol, vector)
 		m.Add(symbol)
 		flight++
 		index++
@@ -497,7 +499,7 @@ func Mach2() {
 	result := make([]byte, 0, 8)
 	for i := 0; i < 33; i++ {
 		vector := m.Mix()
-		distro := vector.Sum().Softmax(1)
+		distro := vector.Sum()
 		index, max := 0, float32(0.0)
 		for i := range model {
 			cs := CS(model[i][:256], distro.Data)
