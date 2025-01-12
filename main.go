@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"runtime"
 	"sort"
 	"strconv"
 )
@@ -423,6 +424,7 @@ func CS(t []float32, vector []float64) float32 {
 
 // Mach2 is the mach 2 mode
 func Mach2() {
+	cpus := runtime.NumCPU()
 	file, err := Data.Open("84.txt.utf-8.bz2")
 	if err != nil {
 		panic(err)
@@ -435,27 +437,56 @@ func Mach2() {
 	}
 
 	rng := rand.New(rand.NewSource(1))
-	model := [1024][512]float32{}
-	fmt.Println(1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
+	model := [8 * 1024][512]float32{}
+	fmt.Println(8 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 	for i := range model {
 		for j := 0; j < 256; j++ {
 			model[i][j] = rng.Float32()
 		}
 	}
 
-	m := NewMixer()
-	for _, v := range data {
-		vector := m.Mix()
-		distro := vector.Sum().Softmax(1)
+	type Result struct {
+		Symbol byte
+		Index  int
+	}
+	done := make(chan Result, 8)
+	process := func(symbol byte, vector Matrix) {
+		query := vector.Sum().Softmax(1).Data
 		index, max := 0, float32(0.0)
 		for i := range model {
-			cs := CS(model[i][:256], distro.Data)
+			cs := CS(model[i][:256], query)
 			if cs > max {
 				max, index = cs, i
 			}
 		}
-		model[index][int(v)+256]++
-		m.Add(v)
+		done <- Result{
+			Symbol: symbol,
+			Index:  index,
+		}
+	}
+
+	m, index, flight := NewMixer(), 0, 0
+	for index < len(data) && flight < cpus {
+		symbol := data[index]
+		go process(symbol, m.Mix())
+		m.Add(symbol)
+		flight++
+		index++
+	}
+	for index < len(data) {
+		result := <-done
+		flight--
+		model[result.Index][256+int(result.Symbol)]++
+
+		symbol := data[index]
+		go process(symbol, m.Mix())
+		m.Add(symbol)
+		flight++
+		index++
+	}
+	for i := 0; i < flight; i++ {
+		result := <-done
+		model[result.Index][256+int(result.Symbol)]++
 	}
 
 	m = NewMixer()
