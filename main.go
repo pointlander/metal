@@ -467,8 +467,8 @@ func Mach2() {
 	fmt.Println(stddev)
 
 	rng := rand.New(rand.NewSource(1))
-	model := [32 * 1024][512]float32{}
-	fmt.Println(32 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
+	model := [64 * 1024][512]float32{}
+	fmt.Println(64 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 	for i := range model {
 		for j := 0; j < 256; j++ {
 			model[i][j] = float32(rng.NormFloat64()*stddev[j] + avg[j])
