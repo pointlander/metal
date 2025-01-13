@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -305,6 +306,8 @@ var (
 	FlagMach2 = flag.Bool("mach2", false, "mach 2 version")
 	// FlagQuery is the query string
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query flag")
+	// FlagBuild build the database
+	FlagBuild = flag.Bool("build", false, "build the database")
 )
 
 // Pair is a pair of values
@@ -436,92 +439,144 @@ func Mach2() {
 		panic(err)
 	}
 
-	avg := make([]float64, 256)
-	m := NewMixer()
-	m.Add(0)
-	for _, v := range data {
-		vector := m.Mix().Sum()
-		for i, v := range vector.Data {
-			avg[i] += v
+	if *FlagBuild {
+		avg := make([]float64, 256)
+		m := NewMixer()
+		m.Add(0)
+		for _, v := range data {
+			vector := m.Mix().Sum()
+			for i, v := range vector.Data {
+				avg[i] += v
+			}
+			m.Add(v)
 		}
-		m.Add(v)
-	}
-	for i := range avg {
-		avg[i] /= float64(len(data))
-	}
-	stddev := make([]float64, 256)
-	m = NewMixer()
-	m.Add(0)
-	for _, v := range data {
-		vector := m.Mix().Sum()
-		for i, v := range vector.Data {
-			diff := avg[i] - v
-			stddev[i] += diff * diff
+		for i := range avg {
+			avg[i] /= float64(len(data))
 		}
-		m.Add(v)
-	}
-	for i := range stddev {
-		stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
-	}
-	fmt.Println(avg)
-	fmt.Println(stddev)
+		stddev := make([]float64, 256)
+		m = NewMixer()
+		m.Add(0)
+		for _, v := range data {
+			vector := m.Mix().Sum()
+			for i, v := range vector.Data {
+				diff := avg[i] - v
+				stddev[i] += diff * diff
+			}
+			m.Add(v)
+		}
+		for i := range stddev {
+			stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
+		}
+		fmt.Println(avg)
+		fmt.Println(stddev)
 
-	rng := rand.New(rand.NewSource(1))
-	model := [64 * 1024][512]float32{}
-	fmt.Println(64 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
-	for i := range model {
-		for j := 0; j < 256; j++ {
-			model[i][j] = float32(rng.NormFloat64()*stddev[j] + avg[j])
-		}
-	}
-
-	type Result struct {
-		Symbol byte
-		Index  int
-	}
-	done := make(chan Result, 8)
-	process := func(symbol byte, vector Matrix) {
-		query := vector.Sum().Data
-		index, max := 0, float32(0.0)
+		rng := rand.New(rand.NewSource(1))
+		model := [64 * 1024][512]float32{}
+		fmt.Println(64 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 		for i := range model {
-			cs := CS(model[i][:256], query)
-			if cs > max {
-				max, index = cs, i
+			for j := 0; j < 256; j++ {
+				model[i][j] = float32(rng.NormFloat64()*stddev[j] + avg[j])
 			}
 		}
-		done <- Result{
-			Symbol: symbol,
-			Index:  index,
+
+		type Result struct {
+			Symbol byte
+			Index  int
+		}
+		done := make(chan Result, 8)
+		process := func(symbol byte, vector Matrix) {
+			query := vector.Sum().Data
+			index, max := 0, float32(0.0)
+			for i := range model {
+				cs := CS(model[i][:256], query)
+				if cs > max {
+					max, index = cs, i
+				}
+			}
+			done <- Result{
+				Symbol: symbol,
+				Index:  index,
+			}
+		}
+
+		m, index, flight := NewMixer(), 0, 0
+		for index < len(data) && flight < cpus {
+			symbol := data[index]
+			vector := m.Mix()
+			go process(symbol, vector)
+			m.Add(symbol)
+			flight++
+			index++
+		}
+		for index < len(data) {
+			result := <-done
+			flight--
+			model[result.Index][256+int(result.Symbol)]++
+
+			symbol := data[index]
+			vector := m.Mix()
+			go process(symbol, vector)
+			m.Add(symbol)
+			flight++
+			index++
+		}
+		for i := 0; i < flight; i++ {
+			result := <-done
+			model[result.Index][256+int(result.Symbol)]++
+		}
+
+		db, err := os.Create("db.bin")
+		if err != nil {
+			panic(err)
+		}
+		defer db.Close()
+		buffer := make([]byte, 4)
+		for i := range model {
+			for _, v := range model[i] {
+				bits := math.Float32bits(v)
+				buffer[0] = byte(bits & 0xFF)
+				buffer[1] = byte((bits >> 8) & 0xFF)
+				buffer[2] = byte((bits >> 16) & 0xFF)
+				buffer[3] = byte((bits >> 24) & 0xFF)
+				n, err := db.Write(buffer)
+				if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("4 bytes should be been written")
+				}
+			}
+		}
+		return
+	}
+
+	rng := rand.New(rand.NewSource(1))
+
+	model := [64 * 1024][512]float32{}
+	in, err := os.Open("db.bin")
+	if err != nil {
+		panic(err)
+	}
+	defer in.Close()
+	buffer := make([]byte, 4)
+	for i := range model {
+		for j := range model[i] {
+			n, err := in.Read(buffer)
+			if err != nil {
+				panic(err)
+			}
+			if n != len(buffer) {
+				panic("4 bytes should have been read")
+			}
+			bits := uint32(buffer[0])
+			bits |= uint32(buffer[1]) << 8
+			bits |= uint32(buffer[2]) << 16
+			bits |= uint32(buffer[3]) << 24
+			model[i][j] = math.Float32frombits(bits)
 		}
 	}
 
-	m, index, flight := NewMixer(), 0, 0
-	for index < len(data) && flight < cpus {
-		symbol := data[index]
-		vector := m.Mix()
-		go process(symbol, vector)
-		m.Add(symbol)
-		flight++
-		index++
-	}
-	for index < len(data) {
-		result := <-done
-		flight--
-		model[result.Index][256+int(result.Symbol)]++
-
-		symbol := data[index]
-		vector := m.Mix()
-		go process(symbol, vector)
-		m.Add(symbol)
-		flight++
-		index++
-	}
-	for i := 0; i < flight; i++ {
-		result := <-done
-		model[result.Index][256+int(result.Symbol)]++
-	}
-
-	m = NewMixer()
+	m := NewMixer()
 	for _, v := range []byte(*FlagQuery) {
 		m.Add(v)
 	}
