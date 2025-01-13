@@ -592,14 +592,15 @@ func Mach2() {
 				max, index = cs, i
 			}
 		}
-		sum := float32(0.0)
+		x := NewMatrix(len(model[index]), 1)
 		for _, v := range model[index] {
-			sum += v
+			x.Data = append(x.Data, float64(v))
 		}
-		total, selected, symbol := float32(0.0), rng.Float32(), 0
-		for i, v := range model[index] {
-			total += v
-			if selected < total/sum {
+		x = x.Softmax(.5)
+		sum, selected, symbol := float32(0.0), rng.Float32(), 0
+		for i, v := range x.Data {
+			sum += float32(v)
+			if selected < sum {
 				symbol = i
 				break
 			}
