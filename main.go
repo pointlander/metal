@@ -436,12 +436,42 @@ func Mach2() {
 		panic(err)
 	}
 
+	avg := make([]float64, 256)
+	m := NewMixer()
+	m.Add(0)
+	for _, v := range data {
+		vector := m.Mix().Sum()
+		for i, v := range vector.Data {
+			avg[i] += v
+		}
+		m.Add(v)
+	}
+	for i := range avg {
+		avg[i] /= float64(len(data))
+	}
+	stddev := make([]float64, 256)
+	m = NewMixer()
+	m.Add(0)
+	for _, v := range data {
+		vector := m.Mix().Sum()
+		for i, v := range vector.Data {
+			diff := avg[i] - v
+			stddev[i] += diff * diff
+		}
+		m.Add(v)
+	}
+	for i := range stddev {
+		stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
+	}
+	fmt.Println(avg)
+	fmt.Println(stddev)
+
 	rng := rand.New(rand.NewSource(1))
-	model := [8 * 1024][512]float32{}
-	fmt.Println(8 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
+	model := [32 * 1024][512]float32{}
+	fmt.Println(32 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 	for i := range model {
 		for j := 0; j < 256; j++ {
-			model[i][j] = rng.Float32()
+			model[i][j] = float32(rng.NormFloat64()*stddev[j] + avg[j])
 		}
 	}
 
