@@ -456,6 +456,7 @@ func Mach2() {
 			avg[i] /= float64(len(data))
 		}
 		stddev := make([]float64, 256)
+		cov := [256][256]float64{}
 		m = NewMixer()
 		m.Add(0)
 		for _, v := range data {
@@ -463,11 +464,21 @@ func Mach2() {
 			for i, v := range vector.Data {
 				diff := avg[i] - v
 				stddev[i] += diff * diff
+				for ii, vv := range vector.Data {
+					diff1 := avg[i] - v
+					diff2 := avg[ii] - vv
+					cov[i][ii] += diff1 * diff2
+				}
 			}
 			m.Add(v)
 		}
 		for i := range stddev {
 			stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
+		}
+		for i := range cov {
+			for j := range cov[i] {
+				cov[i][j] = math.Sqrt(cov[i][j] / float64(len(data)))
+			}
 		}
 		fmt.Println(avg)
 		fmt.Println(stddev)
