@@ -613,12 +613,25 @@ func Mach2() {
 			panic(err)
 		}
 
+		A := NewMatrix(256, 256)
+		for _, v := range set.ByName["A"].X {
+			A.Data = append(A.Data, float64(v))
+		}
+		u := NewMatrix(256, 1, avg...)
 		model := [64 * 1024][512]float32{}
 		fmt.Println(64 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 		for i := range model {
+			z := NewMatrix(256, 1)
 			for j := 0; j < 256; j++ {
-				model[i][j] = float32(rng.NormFloat64()*stddev[j] + avg[j])
+				z.Data = append(z.Data, rng.NormFloat64())
 			}
+			x := A.MulT(z).Add(u)
+			for j, v := range x.Data {
+				model[i][j] = float32(v)
+			}
+			/*for j := 0; j < 256; j++ {
+				model[i][j] = float32(rng.NormFloat64()*stddev[j] + avg[j])
+			}*/
 		}
 
 		type Result struct {
