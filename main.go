@@ -304,7 +304,7 @@ func (m Mixer) Mix() Matrix {
 	return y
 }
 
-//go:embed 84.txt.utf-8.bz2
+//go:embed books/*
 var Data embed.FS
 
 var (
@@ -456,15 +456,23 @@ const (
 // Mach2 is the mach 2 mode
 func Mach2() {
 	cpus := runtime.NumCPU()
-	file, err := Data.Open("84.txt.utf-8.bz2")
-	if err != nil {
-		panic(err)
+	books := []string{
+		"books/84.txt.utf-8.bz2",
+		"books/2701.txt.utf-8.bz2",
 	}
-	defer file.Close()
-	reader := bzip2.NewReader(file)
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		panic(err)
+	var data []byte
+	for _, book := range books {
+		file, err := Data.Open(book)
+		if err != nil {
+			panic(err)
+		}
+		defer file.Close()
+		reader := bzip2.NewReader(file)
+		input, err := io.ReadAll(reader)
+		if err != nil {
+			panic(err)
+		}
+		data = append(data, input...)
 	}
 
 	if *FlagBuild {
