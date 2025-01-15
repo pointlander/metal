@@ -682,6 +682,9 @@ func Mach2() {
 			m.Add(symbol)
 			flight++
 			index++
+			if index%8 == 0 {
+				fmt.Println(index)
+			}
 		}
 		for i := 0; i < flight; i++ {
 			result := <-done
