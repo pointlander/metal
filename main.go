@@ -793,11 +793,11 @@ func Mach3() {
 
 	model := [64 * 1024][512]float32{}
 	fmt.Println(64 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
-	context := uint(0)
 	m := NewMixer()
-	for _, v := range data {
+	m.Add(0)
+	for i, v := range data[:len(data)-1] {
 		vector := m.Mix().Sum()
-		context = ((context << 8) | (uint(v) & 0xFF)) & 0xFFFF
+		context := ((uint(v) << 8) | (uint(data[i+1]) & 0xFF)) & 0xFFFF
 		for i := range model[context][:256] {
 			model[context][i] += float32(vector.Data[i])
 		}
