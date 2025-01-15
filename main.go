@@ -453,6 +453,12 @@ const (
 	StateTotal
 )
 
+// Entry is a vector database entry
+type Entry struct {
+	Vector [256]float32
+	Counts [256]uint32
+}
+
 // Mach2 is the mach 2 mode
 func Mach2() {
 	cpus := runtime.NumCPU()
@@ -491,15 +497,12 @@ func Mach2() {
 		for i := range avg {
 			avg[i] /= float64(len(data))
 		}
-		stddev := make([]float64, 256)
 		cov := [256][256]float64{}
 		m = NewMixer()
 		m.Add(0)
 		for _, v := range data {
 			vector := m.Mix().Sum()
 			for i, v := range vector.Data {
-				diff := avg[i] - v
-				stddev[i] += diff * diff
 				for ii, vv := range vector.Data {
 					diff1 := avg[i] - v
 					diff2 := avg[ii] - vv
@@ -508,16 +511,12 @@ func Mach2() {
 			}
 			m.Add(v)
 		}
-		for i := range stddev {
-			stddev[i] = math.Sqrt(stddev[i] / float64(len(data)))
-		}
 		for i := range cov {
 			for j := range cov[i] {
 				cov[i][j] = cov[i][j] / float64(len(data))
 			}
 		}
 		fmt.Println(avg)
-		fmt.Println(stddev)
 
 		set := tf32.NewSet()
 		set.Add("A", 256, 256)
@@ -626,7 +625,7 @@ func Mach2() {
 			A.Data = append(A.Data, float64(v))
 		}
 		u := NewMatrix(256, 1, avg...)
-		model := [64 * 1024][512]float32{}
+		model := [64 * 1024]Entry{}
 		fmt.Println(64 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 		for i := range model {
 			z := NewMatrix(256, 1)
@@ -635,11 +634,8 @@ func Mach2() {
 			}
 			x := A.MulT(z).Add(u)
 			for j, v := range x.Data {
-				model[i][j] = float32(v)
+				model[i].Vector[j] = float32(v)
 			}
-			/*for j := 0; j < 256; j++ {
-				model[i][j] = float32(rng.NormFloat64()*stddev[j] + avg[j])
-			}*/
 		}
 
 		type Result struct {
@@ -651,7 +647,7 @@ func Mach2() {
 			query := vector.Sum().Data
 			index, max := 0, float32(0.0)
 			for i := range model {
-				cs := CS(model[i][:256], query)
+				cs := CS(model[i].Vector[:], query)
 				if cs > max {
 					max, index = cs, i
 				}
@@ -674,7 +670,7 @@ func Mach2() {
 		for index < len(data) {
 			result := <-done
 			flight--
-			model[result.Index][256+int(result.Symbol)]++
+			model[result.Index].Counts[result.Symbol]++
 
 			symbol := data[index]
 			vector := m.Mix()
@@ -688,7 +684,7 @@ func Mach2() {
 		}
 		for i := 0; i < flight; i++ {
 			result := <-done
-			model[result.Index][256+int(result.Symbol)]++
+			model[result.Index].Counts[result.Symbol]++
 		}
 
 		db, err := os.Create("db.bin")
@@ -698,7 +694,7 @@ func Mach2() {
 		defer db.Close()
 		buffer := make([]byte, 4)
 		for i := range model {
-			for _, v := range model[i] {
+			for _, v := range model[i].Vector {
 				bits := math.Float32bits(v)
 				buffer[0] = byte(bits & 0xFF)
 				buffer[1] = byte((bits >> 8) & 0xFF)
@@ -712,13 +708,28 @@ func Mach2() {
 					panic("4 bytes should be been written")
 				}
 			}
+			for _, v := range model[i].Counts {
+				bits := v
+				buffer[0] = byte(bits & 0xFF)
+				buffer[1] = byte((bits >> 8) & 0xFF)
+				buffer[2] = byte((bits >> 16) & 0xFF)
+				buffer[3] = byte((bits >> 24) & 0xFF)
+				n, err := db.Write(buffer)
+				if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("4 bytes should be been written")
+				}
+			}
+
 		}
 		return
 	}
 
 	rng := rand.New(rand.NewSource(1))
 
-	model := [64 * 1024][512]float32{}
+	model := [64 * 1024]Entry{}
 	in, err := os.Open("db.bin")
 	if err != nil {
 		panic(err)
@@ -726,7 +737,7 @@ func Mach2() {
 	defer in.Close()
 	buffer := make([]byte, 4)
 	for i := range model {
-		for j := range model[i] {
+		for j := range model[i].Vector {
 			n, err := in.Read(buffer)
 			if err != nil {
 				panic(err)
@@ -738,8 +749,23 @@ func Mach2() {
 			bits |= uint32(buffer[1]) << 8
 			bits |= uint32(buffer[2]) << 16
 			bits |= uint32(buffer[3]) << 24
-			model[i][j] = math.Float32frombits(bits)
+			model[i].Vector[j] = math.Float32frombits(bits)
 		}
+		for j := range model[i].Counts {
+			n, err := in.Read(buffer)
+			if err != nil {
+				panic(err)
+			}
+			if n != len(buffer) {
+				panic("4 bytes should have been read")
+			}
+			bits := uint32(buffer[0])
+			bits |= uint32(buffer[1]) << 8
+			bits |= uint32(buffer[2]) << 16
+			bits |= uint32(buffer[3]) << 24
+			model[i].Counts[j] = bits
+		}
+
 	}
 
 	m := NewMixer()
@@ -754,7 +780,7 @@ func Mach2() {
 		index, max := 0, float32(0.0)
 		for i := range model {
 			isZero := true
-			for _, v := range model[i][256:] {
+			for _, v := range model[i].Counts {
 				if v != 0 {
 					isZero = false
 					break
@@ -763,13 +789,13 @@ func Mach2() {
 			if isZero {
 				continue
 			}
-			cs := CS(model[i][:256], distro.Data)
+			cs := CS(model[i].Vector[:], distro.Data)
 			if cs > max {
 				max, index = cs, i
 			}
 		}
-		x := NewMatrix(len(model[index]), 1)
-		for _, v := range model[index] {
+		x := NewMatrix(len(model[index].Counts), 1)
+		for _, v := range model[index].Counts {
 			x.Data = append(x.Data, float64(v))
 		}
 		x = x.Softmax(1)
