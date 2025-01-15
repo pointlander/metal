@@ -742,6 +742,16 @@ func Mach2() {
 		distro := vector.Sum()
 		index, max := 0, float32(0.0)
 		for i := range model {
+			isZero := true
+			for _, v := range model[i][256:] {
+				if v != 0 {
+					isZero = false
+					break
+				}
+			}
+			if isZero {
+				continue
+			}
 			cs := CS(model[i][:256], distro.Data)
 			if cs > max {
 				max, index = cs, i
@@ -751,7 +761,7 @@ func Mach2() {
 		for _, v := range model[index] {
 			x.Data = append(x.Data, float64(v))
 		}
-		x = x.Softmax(.5)
+		x = x.Softmax(1)
 		sum, selected, symbol := float32(0.0), rng.Float32(), 0
 		for i, v := range x.Data {
 			sum += float32(v)
