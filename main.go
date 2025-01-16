@@ -463,6 +463,7 @@ type Entry struct {
 func Mach2() {
 	cpus := runtime.NumCPU()
 	books := []string{
+		"books/10.txt.utf-8.bz2",
 		"books/84.txt.utf-8.bz2",
 		"books/2701.txt.utf-8.bz2",
 	}
