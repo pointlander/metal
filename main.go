@@ -773,46 +773,66 @@ func Mach2() {
 		m.Add(v)
 	}
 
-	result := make([]byte, 0, 8)
-	for i := 0; i < 33; i++ {
-		vector := m.Mix()
-		distro := vector.Sum()
-		index, max := 0, float32(0.0)
-		for i := range model {
-			isZero := true
-			for _, v := range model[i].Counts {
-				if v != 0 {
-					isZero = false
+	sample := func(m Mixer) (int, string) {
+		value, result := 0, make([]byte, 0, 8)
+		for i := 0; i < 33; i++ {
+			vector := m.Mix()
+			distro := vector.Sum()
+			index, max := 0, float32(0.0)
+			for i := range model {
+				isZero := true
+				for _, v := range model[i].Counts {
+					if v != 0 {
+						isZero = false
+						break
+					}
+				}
+				if isZero {
+					continue
+				}
+				cs := CS(model[i].Vector[:], distro.Data)
+				if cs > max {
+					max, index = cs, i
+				}
+			}
+			x := NewMatrix(len(model[index].Counts), 1)
+			for _, v := range model[index].Counts {
+				value += int(v)
+				x.Data = append(x.Data, float64(v))
+			}
+			x = x.Softmax(1)
+			sum, selected, symbol := float32(0.0), rng.Float32(), 0
+			for i, v := range x.Data {
+				sum += float32(v)
+				if selected < sum {
+					symbol = i
 					break
 				}
 			}
-			if isZero {
-				continue
-			}
-			cs := CS(model[i].Vector[:], distro.Data)
-			if cs > max {
-				max, index = cs, i
-			}
-		}
-		x := NewMatrix(len(model[index].Counts), 1)
-		for _, v := range model[index].Counts {
-			x.Data = append(x.Data, float64(v))
-		}
-		x = x.Softmax(1)
-		sum, selected, symbol := float32(0.0), rng.Float32(), 0
-		for i, v := range x.Data {
-			sum += float32(v)
-			if selected < sum {
-				symbol = i
-				break
-			}
-		}
 
-		fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
-		m.Add(byte(symbol))
-		result = append(result, byte(symbol))
+			fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
+			m.Add(byte(symbol))
+			result = append(result, byte(symbol))
+		}
+		return value, string(result)
 	}
-	fmt.Println(string(result))
+	type Result struct {
+		Result string
+		Value  int
+	}
+	results := make([]Result, 10)
+	for i := range results {
+		value, result := sample(m.Copy())
+		results[i].Value = value
+		results[i].Result = result
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Value > results[j].Value
+	})
+	for _, r := range results {
+		fmt.Println(r.Value, r.Result)
+		fmt.Println()
+	}
 }
 
 // Mach3 is the mach 3 mode
