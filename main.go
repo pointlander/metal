@@ -680,7 +680,7 @@ func Mach2() {
 			flight++
 			index++
 			if index%8 == 0 {
-				fmt.Println(index)
+				fmt.Println(index, "/", len(data), "=", float64(index)/float64(len(data)))
 			}
 		}
 		for i := 0; i < flight; i++ {
