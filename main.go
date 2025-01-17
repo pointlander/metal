@@ -314,6 +314,8 @@ var (
 	FlagMach2 = flag.Bool("mach2", false, "mach 2 version")
 	// FlagMach3 is the mach 3 version
 	FlagMach3 = flag.Bool("mach3", false, "mach 3 version")
+	// FlagMach4 is the mach 4 version
+	FlagMach4 = flag.Bool("mach4", false, "mach 4 version")
 	// FlagQuery is the query string
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query flag")
 	// FlagBuild build the database
@@ -905,6 +907,47 @@ func Mach3() {
 	fmt.Println(string(result))
 }
 
+// Mach4 is the mach 4 version
+func Mach4() {
+	books := []string{
+		"books/10.txt.utf-8.bz2",
+		"books/84.txt.utf-8.bz2",
+		"books/2701.txt.utf-8.bz2",
+	}
+	data := make(map[string][]byte)
+	for _, book := range books {
+		file, err := Data.Open(book)
+		if err != nil {
+			panic(err)
+		}
+		defer file.Close()
+		reader := bzip2.NewReader(file)
+		input, err := io.ReadAll(reader)
+		if err != nil {
+			panic(err)
+		}
+		data[book] = input
+	}
+	type Vector struct {
+		Vector []float32
+		Symbol byte
+	}
+	vectors := make([]Vector, 10*1024)
+	m := NewMixer()
+	m.Add(0)
+	for i := range vectors {
+		vector := m.Mix().Sum()
+		v := make([]float32, len(vector.Data))
+		for j := range v {
+			v[j] = float32(vector.Data[j])
+		}
+		vectors[i].Vector = v
+		s := data["books/10.txt.utf-8.bz2"][i]
+		vectors[i].Symbol = s
+		m.Add(byte(s))
+	}
+}
+
 func main() {
 	flag.Parse()
 
@@ -916,6 +959,9 @@ func main() {
 		return
 	} else if *FlagMach3 {
 		Mach3()
+		return
+	} else if *FlagMach4 {
+		Mach4()
 		return
 	}
 }
