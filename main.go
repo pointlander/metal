@@ -442,6 +442,8 @@ const (
 	B2 = 0.89
 	// Eta is the learning rate
 	Eta = 1.0e-3
+	// Scale is the scale of the model
+	Scale = 128
 )
 
 const (
@@ -626,8 +628,8 @@ func Mach2() {
 			A.Data = append(A.Data, float64(v))
 		}
 		u := NewMatrix(256, 1, avg...)
-		model := [64 * 1024]Entry{}
-		fmt.Println(64 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
+		model := [Scale * 1024]Entry{}
+		fmt.Println(Scale * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 		for i := range model {
 			z := NewMatrix(256, 1)
 			for j := 0; j < 256; j++ {
@@ -660,6 +662,7 @@ func Mach2() {
 		}
 
 		m, index, flight := NewMixer(), 0, 0
+		m.Add(0)
 		for index < len(data) && flight < cpus {
 			symbol := data[index]
 			vector := m.Mix()
@@ -730,7 +733,7 @@ func Mach2() {
 
 	rng := rand.New(rand.NewSource(1))
 
-	model := [64 * 1024]Entry{}
+	model := [Scale * 1024]Entry{}
 	in, err := os.Open("db.bin")
 	if err != nil {
 		panic(err)
