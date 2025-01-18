@@ -7,128 +7,154 @@ package main
 import (
 	"archive/tar"
 	"archive/zip"
-	"compress/bzip2"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"math"
+	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 )
 
 // Mach4 is the mach 4 version
 func Mach4() {
-	archive, err := zip.OpenReader("/home/andrew/share/txt-files.tar.zip")
+	if *FlagBuild {
+		if *FlagInput == "" {
+			panic("-input required")
+		}
+		archive, err := zip.OpenReader(*FlagInput)
+		if err != nil {
+			panic(err)
+		}
+		defer archive.Close()
+
+		rng := rand.New(rand.NewSource(1))
+		var model []Vector
+		for _, f := range archive.File {
+			fileInArchive, err := f.Open()
+			if err != nil {
+				panic(err)
+			}
+			tarReader := tar.NewReader(fileInArchive)
+			for {
+				header, err := tarReader.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					fmt.Println("Error reading header:", err)
+					return
+				}
+
+				switch header.Typeflag {
+				case tar.TypeReg:
+					fmt.Println("File:", header.Name)
+					buffer, err := ioutil.ReadAll(tarReader)
+					if err != nil {
+						panic(err)
+					}
+					m, index := NewMixer(), rng.Intn(len(buffer)-(128+1))
+					for _, v := range buffer[index : index+128] {
+						m.Add(v)
+					}
+					vector64 := m.Mix().Sum().Data
+					vector32 := make([]float32, len(vector64))
+					for i, v := range vector64 {
+						vector32[i] = float32(v)
+					}
+					model = append(model, Vector{
+						Vector: vector32,
+						Symbol: buffer[index+128],
+					})
+				case tar.TypeDir:
+					fmt.Println("Directory:", header.Name)
+				default:
+					fmt.Println("Unknown type:", header.Typeflag)
+				}
+			}
+			fileInArchive.Close()
+		}
+		db, err := os.Create("vdb.bin")
+		if err != nil {
+			panic(err)
+		}
+		defer db.Close()
+		buffer := make([]byte, 4)
+		for i := range model {
+			for _, v := range model[i].Vector {
+				bits := math.Float32bits(v)
+				buffer[0] = byte(bits & 0xFF)
+				buffer[1] = byte((bits >> 8) & 0xFF)
+				buffer[2] = byte((bits >> 16) & 0xFF)
+				buffer[3] = byte((bits >> 24) & 0xFF)
+				n, err := db.Write(buffer)
+				if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("4 bytes should be been written")
+				}
+			}
+			n, err := db.Write([]byte{model[i].Symbol})
+			if err != nil {
+				panic(err)
+			}
+			if n != 1 {
+				panic("1 byte should be been written")
+			}
+		}
+
+		return
+	}
+
+	var model []Vector
+	in, err := os.Open("vdb.bin")
 	if err != nil {
 		panic(err)
 	}
-	defer archive.Close()
-
-	for _, f := range archive.File {
-		fileInArchive, err := f.Open()
-		if err != nil {
-			panic(err)
+	defer in.Close()
+	buffer, symbol := make([]byte, 4), make([]byte, 1)
+	for {
+		vector := Vector{
+			Vector: make([]float32, 256),
 		}
-		tarReader := tar.NewReader(fileInArchive)
-		for {
-			header, err := tarReader.Next()
-			if err == io.EOF {
+		for j := range vector.Vector {
+			_, err := in.Read(buffer)
+			if err != nil {
 				break
 			}
-			if err != nil {
-				fmt.Println("Error reading header:", err)
-				return
-			}
-
-			switch header.Typeflag {
-			case tar.TypeReg:
-				fmt.Println("File:", header.Name)
-				// buf, _ := ioutil.ReadAll(tarReader)
-			case tar.TypeDir:
-				fmt.Println("Directory:", header.Name)
-			default:
-				fmt.Println("Unknown type:", header.Typeflag)
-			}
+			bits := uint32(buffer[0])
+			bits |= uint32(buffer[1]) << 8
+			bits |= uint32(buffer[2]) << 16
+			bits |= uint32(buffer[3]) << 24
+			vector.Vector[j] = math.Float32frombits(bits)
 		}
-		fileInArchive.Close()
+		_, err := in.Read(symbol)
+		if err != nil {
+			break
+		}
+		vector.Symbol = symbol[0]
+		model = append(model, vector)
 	}
 
-	books := []string{
-		"books/10.txt.utf-8.bz2",
-		"books/84.txt.utf-8.bz2",
-		"books/2701.txt.utf-8.bz2",
-	}
-	data := make(map[string][]byte)
-	for _, book := range books {
-		file, err := Data.Open(book)
-		if err != nil {
-			panic(err)
-		}
-		defer file.Close()
-		reader := bzip2.NewReader(file)
-		input, err := io.ReadAll(reader)
-		if err != nil {
-			panic(err)
-		}
-		data[book] = input
-	}
-	type Vector struct {
-		Vector []float32
-		Symbol byte
-		Next   byte
-	}
-	vectors := make([]Vector, 10*1024)
-	sub := vectors[:len(vectors)-1]
 	m := NewMixer()
-	for i := range sub {
-		s := data["books/10.txt.utf-8.bz2"][i]
-		m.Add(byte(s))
-		vector := m.Mix().Sum()
-		v := make([]float32, len(vector.Data))
-		for j := range v {
-			v[j] = float32(vector.Data[j])
-		}
-		sub[i].Vector = v
-		sub[i].Symbol = s
-		sub[i].Next = data["books/10.txt.utf-8.bz2"][i+1]
-	}
-
-	m = NewMixer()
-	query := []byte("What is the meaning of life?")
-	for _, v := range query {
+	for _, v := range *FlagQuery {
 		m.Add(byte(v))
 	}
 
 	for i := 0; i < 33; i++ {
 		vector := m.Mix().Sum().Data
 		index, max := 0, 0.0
-		for j := range sub {
-			cs := CSFloat64(sub[j].Vector, vector)
+		for j := range model {
+			cs := CSFloat64(model[j].Vector, vector)
 			if cs > max {
 				max, index = cs, j
 			}
 		}
-		y := strconv.Quote(string(sub[index].Next))
+		y := strconv.Quote(string(model[index].Symbol))
 		y = strings.TrimRight(strings.TrimLeft(y, "\""), "\"")
 		fmt.Printf(y)
-		m.Add(byte(sub[index].Next))
-	}
-
-	m = NewMixer()
-	for _, v := range data["books/84.txt.utf-8.bz2"] {
-		m.Add(byte(v))
-		vector := m.Mix().Sum().Data
-		index, max := 0, 0.0
-		for j := range sub {
-			cs := CSFloat64(sub[j].Vector, vector)
-			if cs > max {
-				max, index = cs, j
-			}
-		}
-		x := strconv.Quote(string(v))
-		x = strings.TrimRight(strings.TrimLeft(x, "\""), "\"")
-		y := strconv.Quote(string(sub[index].Symbol))
-		y = strings.TrimRight(strings.TrimLeft(y, "\""), "\"")
-		if x != y {
-			fmt.Println(x, y)
-		}
+		m.Add(byte(model[index].Symbol))
 	}
 }

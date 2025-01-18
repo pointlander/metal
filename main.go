@@ -305,7 +305,15 @@ var (
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query flag")
 	// FlagBuild build the database
 	FlagBuild = flag.Bool("build", false, "build the database")
+	// FlagInput is the input for building
+	FlagInput = flag.String("input", "", "input for building")
 )
+
+// Vector is a vector
+type Vector struct {
+	Vector []float32
+	Symbol byte
+}
 
 // Pair is a pair of values
 type Pair struct {
