@@ -907,6 +907,18 @@ func Mach3() {
 	fmt.Println(string(result))
 }
 
+// CSFloat64 is float64 cosine similarity
+func CSFloat64(t []float32, vector []float64) float64 {
+	aa, bb, ab := 0.0, 0.0, 0.0
+	for i := range vector {
+		a, b := vector[i], float64(t[i])
+		aa += a * a
+		bb += b * b
+		ab += a * b
+	}
+	return ab / (math.Sqrt(aa) * math.Sqrt(bb))
+}
+
 // Mach4 is the mach 4 version
 func Mach4() {
 	books := []string{
@@ -934,17 +946,36 @@ func Mach4() {
 	}
 	vectors := make([]Vector, 10*1024)
 	m := NewMixer()
-	m.Add(0)
 	for i := range vectors {
+		s := data["books/10.txt.utf-8.bz2"][i]
+		m.Add(byte(s))
 		vector := m.Mix().Sum()
 		v := make([]float32, len(vector.Data))
 		for j := range v {
 			v[j] = float32(vector.Data[j])
 		}
 		vectors[i].Vector = v
-		s := data["books/10.txt.utf-8.bz2"][i]
 		vectors[i].Symbol = s
-		m.Add(byte(s))
+	}
+
+	m = NewMixer()
+	for _, v := range data["books/84.txt.utf-8.bz2"] {
+		m.Add(byte(v))
+		vector := m.Mix().Sum().Data
+		index, max := 0, 0.0
+		for j := range vectors {
+			cs := CSFloat64(vectors[j].Vector, vector)
+			if cs > max {
+				max, index = cs, j
+			}
+		}
+		x := strconv.Quote(string(v))
+		x = strings.TrimRight(strings.TrimLeft(x, "\""), "\"")
+		y := strconv.Quote(string(vectors[index].Symbol))
+		y = strings.TrimRight(strings.TrimLeft(y, "\""), "\"")
+		if x != y {
+			fmt.Println(x, y)
+		}
 	}
 }
 
