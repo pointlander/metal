@@ -5,6 +5,8 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"compress/bzip2"
 	"embed"
 	"flag"
@@ -921,6 +923,41 @@ func CSFloat64(t []float32, vector []float64) float64 {
 
 // Mach4 is the mach 4 version
 func Mach4() {
+	archive, err := zip.OpenReader("/home/andrew/share/txt-files.tar.zip")
+	if err != nil {
+		panic(err)
+	}
+	defer archive.Close()
+
+	for _, f := range archive.File {
+		fileInArchive, err := f.Open()
+		if err != nil {
+			panic(err)
+		}
+		tarReader := tar.NewReader(fileInArchive)
+		for {
+			header, err := tarReader.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				fmt.Println("Error reading header:", err)
+				return
+			}
+
+			switch header.Typeflag {
+			case tar.TypeReg:
+				fmt.Println("File:", header.Name)
+				// buf, _ := ioutil.ReadAll(tarReader)
+			case tar.TypeDir:
+				fmt.Println("Directory:", header.Name)
+			default:
+				fmt.Println("Unknown type:", header.Typeflag)
+			}
+		}
+		fileInArchive.Close()
+	}
+
 	books := []string{
 		"books/10.txt.utf-8.bz2",
 		"books/84.txt.utf-8.bz2",
