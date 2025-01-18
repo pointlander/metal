@@ -943,10 +943,12 @@ func Mach4() {
 	type Vector struct {
 		Vector []float32
 		Symbol byte
+		Next   byte
 	}
 	vectors := make([]Vector, 10*1024)
+	sub := vectors[:len(vectors)-1]
 	m := NewMixer()
-	for i := range vectors {
+	for i := range sub {
 		s := data["books/10.txt.utf-8.bz2"][i]
 		m.Add(byte(s))
 		vector := m.Mix().Sum()
@@ -954,8 +956,30 @@ func Mach4() {
 		for j := range v {
 			v[j] = float32(vector.Data[j])
 		}
-		vectors[i].Vector = v
-		vectors[i].Symbol = s
+		sub[i].Vector = v
+		sub[i].Symbol = s
+		sub[i].Next = data["books/10.txt.utf-8.bz2"][i+1]
+	}
+
+	m = NewMixer()
+	query := []byte("What is the meaning of life?")
+	for _, v := range query {
+		m.Add(byte(v))
+	}
+
+	for i := 0; i < 33; i++ {
+		vector := m.Mix().Sum().Data
+		index, max := 0, 0.0
+		for j := range sub {
+			cs := CSFloat64(sub[j].Vector, vector)
+			if cs > max {
+				max, index = cs, j
+			}
+		}
+		y := strconv.Quote(string(sub[index].Next))
+		y = strings.TrimRight(strings.TrimLeft(y, "\""), "\"")
+		fmt.Printf(y)
+		m.Add(byte(sub[index].Next))
 	}
 
 	m = NewMixer()
@@ -963,15 +987,15 @@ func Mach4() {
 		m.Add(byte(v))
 		vector := m.Mix().Sum().Data
 		index, max := 0, 0.0
-		for j := range vectors {
-			cs := CSFloat64(vectors[j].Vector, vector)
+		for j := range sub {
+			cs := CSFloat64(sub[j].Vector, vector)
 			if cs > max {
 				max, index = cs, j
 			}
 		}
 		x := strconv.Quote(string(v))
 		x = strings.TrimRight(strings.TrimLeft(x, "\""), "\"")
-		y := strconv.Quote(string(vectors[index].Symbol))
+		y := strconv.Quote(string(sub[index].Symbol))
 		y = strings.TrimRight(strings.TrimLeft(y, "\""), "\"")
 		if x != y {
 			fmt.Println(x, y)
