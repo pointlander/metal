@@ -54,7 +54,7 @@ func Mach4() {
 					if err != nil {
 						panic(err)
 					}
-					for i := 0; i < 2; i++ {
+					for i := 0; i < 7; i++ {
 						m, index := NewMixer(), rng.Intn(len(buffer)-(128+1))
 						for _, v := range buffer[index : index+128] {
 							m.Add(v)
@@ -145,7 +145,7 @@ func Mach4() {
 		m.Add(byte(v))
 	}
 
-	for i := 0; i < 33; i++ {
+	for i := 0; i < 77; i++ {
 		vector := m.Mix().Sum().Data
 		index, max := 0, 0.0
 		for j := range model {
