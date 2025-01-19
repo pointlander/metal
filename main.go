@@ -301,6 +301,8 @@ var (
 	FlagMach3 = flag.Bool("mach3", false, "mach 3 version")
 	// FlagMach4 is the mach 4 version
 	FlagMach4 = flag.Bool("mach4", false, "mach 4 version")
+	// FlagMach5 is the mach 5 version
+	FlagMach5 = flag.Bool("mach5", false, "mach 5 version")
 	// FlagQuery is the query string
 	FlagQuery = flag.String("query", "What is the meaning of life?", "query flag")
 	// FlagBuild build the database
@@ -313,6 +315,12 @@ var (
 type Vector struct {
 	Vector []float32
 	Symbol byte
+}
+
+// Bucket is a bucket of vectors
+type Bucket struct {
+	Vector  [256]float32
+	Vectors []Vector
 }
 
 // Pair is a pair of values
@@ -385,6 +393,9 @@ func main() {
 		return
 	} else if *FlagMach4 {
 		Mach4()
+		return
+	} else if *FlagMach5 {
+		Mach5()
 		return
 	}
 }
