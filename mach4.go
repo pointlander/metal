@@ -54,11 +54,21 @@ func Mach4() {
 					if err != nil {
 						panic(err)
 					}
-					for i := 0; i < 7; i++ {
-						m, index := NewMixer(), rng.Intn(len(buffer)-(128+1))
-						for _, v := range buffer[index : index+128] {
-							m.Add(v)
-						}
+					m, index := NewMixer(), rng.Intn(len(buffer)-(128+8))
+					for _, v := range buffer[index : index+128] {
+						m.Add(v)
+					}
+					vector64 := m.Mix().Sum().Data
+					vector32 := make([]float32, len(vector64))
+					for i, v := range vector64 {
+						vector32[i] = float32(v)
+					}
+					model = append(model, Vector{
+						Vector: vector32,
+						Symbol: buffer[index+128],
+					})
+					m.Add(buffer[index+128])
+					for i := 0; i < 6; i++ {
 						vector64 := m.Mix().Sum().Data
 						vector32 := make([]float32, len(vector64))
 						for i, v := range vector64 {
@@ -66,8 +76,9 @@ func Mach4() {
 						}
 						model = append(model, Vector{
 							Vector: vector32,
-							Symbol: buffer[index+128],
+							Symbol: buffer[index+128+1+i],
 						})
+						m.Add(buffer[index+128+1+i])
 					}
 				case tar.TypeDir:
 					fmt.Println("Directory:", header.Name)
