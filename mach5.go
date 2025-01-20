@@ -329,16 +329,24 @@ func Mach5() {
 
 	model := [ModelSize * 1024]Bucket{}
 	sizes := make([]uint64, ModelSize*1024)
-	in, err := os.Open("tdb.bin")
-	if err != nil {
-		panic(err)
+	in := make([]*os.File, 4)
+	for i := range in {
+		var err error
+		in[i], err = os.Open("tdb.bin")
+		if err != nil {
+			panic(err)
+		}
 	}
-	defer in.Close()
+	defer func() {
+		for i := range in {
+			in[i].Close()
+		}
+	}()
 	buffer32 := make([]byte, 4)
 	buffer64 := make([]byte, 8)
 	for i := range model {
 		for j := range model[i].Vector {
-			n, err := in.Read(buffer32)
+			n, err := in[0].Read(buffer32)
 			if err != nil {
 				panic(err)
 			}
@@ -352,7 +360,7 @@ func Mach5() {
 			model[i].Vector[j] = math.Float32frombits(bits)
 		}
 		var count uint64
-		n, err := in.Read(buffer64)
+		n, err := in[0].Read(buffer64)
 		if err != nil {
 			panic(err)
 		}
@@ -379,8 +387,52 @@ func Mach5() {
 		Index int
 		Value float32
 	}
+	type Result struct {
+		Symbol byte
+		Max    float32
+	}
+	const offset = ModelSize * 1024 * (4*256 + 1*8)
+	done := make(chan Result, 8)
+	search := func(r, index int, data []float64) {
+		max, symbol := float32(0.0), byte(0)
+		buffer32, vector, buffer8 := make([]byte, 4), make([]float32, 256), make([]byte, 1)
+		_, err := in[r].Seek(int64(offset+sums[index]*(4*256+1)), io.SeekStart)
+		if err != nil {
+			panic(err)
+		}
+		for j := 0; j < int(sizes[index]); j++ {
+			for j := range vector {
+				n, err := in[r].Read(buffer32)
+				if err != nil {
+					panic(err)
+				}
+				if n != len(buffer32) {
+					panic("4 bytes should have been read")
+				}
+				var bits uint32
+				for k := range buffer32 {
+					bits |= uint32(buffer32[k]) << (8 * k)
+				}
+				vector[j] = math.Float32frombits(bits)
+			}
+			n, err := in[r].Read(buffer8)
+			if err != nil {
+				panic(err)
+			}
+			if n != len(buffer8) {
+				panic("1 byte should have been read")
+			}
+			cs := CS(vector, data)
+			if cs > max {
+				max, symbol = cs, buffer8[0]
+			}
+		}
+		done <- Result{
+			Symbol: symbol,
+			Max:    max,
+		}
+	}
 	sample := func(m Mixer) string {
-		const offset = ModelSize * 1024 * (4*256 + 1*8)
 		result := make([]byte, 0, 8)
 		for i := 0; i < 33; i++ {
 			data := m.Mix().Sum().Data
@@ -395,42 +447,20 @@ func Mach5() {
 			sort.Slice(indexes, func(i, j int) bool {
 				return indexes[i].Value > indexes[j].Value
 			})
-			max, symbol := float32(0.0), byte(0)
-			buffer32, vector, buffer8 := make([]byte, 4), make([]float32, 256), make([]byte, 1)
-			for _, index := range indexes[:3] {
-				_, err := in.Seek(int64(offset+sums[index.Index]*(4*256+1)), io.SeekStart)
-				if err != nil {
-					panic(err)
-				}
-				for j := 0; j < int(sizes[index.Index]); j++ {
-					for j := range vector {
-						n, err := in.Read(buffer32)
-						if err != nil {
-							panic(err)
-						}
-						if n != len(buffer32) {
-							panic("4 bytes should have been read")
-						}
-						var bits uint32
-						for k := range buffer32 {
-							bits |= uint32(buffer32[k]) << (8 * k)
-						}
-						vector[j] = math.Float32frombits(bits)
-					}
-					n, err := in.Read(buffer8)
-					if err != nil {
-						panic(err)
-					}
-					if n != len(buffer8) {
-						panic("1 byte should have been read")
-					}
-					cs := CS(vector, data)
-					if cs > max {
-						max, symbol = cs, buffer8[0]
-					}
-				}
-			}
 
+			var results []Result
+			for j := 0; j < 4; j++ {
+				go search(j, indexes[j].Index, data)
+			}
+			for j := 0; j < 4; j++ {
+				result := <-done
+				results = append(results, result)
+			}
+			sort.Slice(results, func(i, j int) bool {
+				return results[i].Max > results[j].Max
+			})
+
+			symbol := results[0].Symbol
 			fmt.Printf("%d %s\n", symbol, strconv.Quote(string(symbol)))
 			m.Add(symbol)
 			result = append(result, symbol)
