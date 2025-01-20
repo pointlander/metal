@@ -395,27 +395,27 @@ func Mach5() {
 	done := make(chan Result, 8)
 	search := func(r, index int, data []float64) {
 		max, symbol := float32(0.0), byte(0)
-		buffer32, vector, buffer8 := make([]byte, 4), make([]float32, 256), make([]byte, 1)
+		buffer32, vector, buffer8 := make([]byte, 4*256), make([]float32, 256), make([]byte, 1)
 		_, err := in[r].Seek(int64(offset+sums[index]*(4*256+1)), io.SeekStart)
 		if err != nil {
 			panic(err)
 		}
 		for j := 0; j < int(sizes[index]); j++ {
+			n, err := in[r].Read(buffer32)
+			if err != nil {
+				panic(err)
+			}
+			if n != len(buffer32) {
+				panic("1024 bytes should have been read")
+			}
 			for j := range vector {
-				n, err := in[r].Read(buffer32)
-				if err != nil {
-					panic(err)
-				}
-				if n != len(buffer32) {
-					panic("4 bytes should have been read")
-				}
 				var bits uint32
-				for k := range buffer32 {
-					bits |= uint32(buffer32[k]) << (8 * k)
+				for k := 0; k < 4; k++ {
+					bits |= uint32(buffer32[4*j+k]) << (8 * k)
 				}
 				vector[j] = math.Float32frombits(bits)
 			}
-			n, err := in[r].Read(buffer8)
+			n, err = in[r].Read(buffer8)
 			if err != nil {
 				panic(err)
 			}
