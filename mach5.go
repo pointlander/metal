@@ -434,7 +434,7 @@ func Mach5() {
 	}
 	sample := func(m Mixer) string {
 		result := make([]byte, 0, 8)
-		for i := 0; i < 33; i++ {
+		for i := 0; i < 128; i++ {
 			data := m.Mix().Sum().Data
 			indexes := make([]Index, len(model))
 			for i := range model {
