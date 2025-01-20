@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -374,52 +375,59 @@ func Mach5() {
 		m.Add(v)
 	}
 
+	type Index struct {
+		Index int
+		Value float32
+	}
 	sample := func(m Mixer) string {
 		const offset = ModelSize * 1024 * (4*256 + 1*8)
 		result := make([]byte, 0, 8)
 		for i := 0; i < 33; i++ {
 			data := m.Mix().Sum().Data
-			index, max := 0, float32(0.0)
+			indexes := make([]Index, len(model))
 			for i := range model {
 				if sizes[i] == 0 {
 					continue
 				}
-				cs := CS(model[i].Vector[:], data)
-				if cs > max {
-					max, index = cs, i
-				}
+				indexes[i].Index = i
+				indexes[i].Value = CS(model[i].Vector[:], data)
 			}
-			_, err := in.Seek(int64(offset+sums[index]*(4*256+1)), io.SeekStart)
-			if err != nil {
-				panic(err)
-			}
-			max, symbol := 0.0, byte(0)
+			sort.Slice(indexes, func(i, j int) bool {
+				return indexes[i].Value > indexes[j].Value
+			})
+			max, symbol := float32(0.0), byte(0)
 			buffer32, vector, buffer8 := make([]byte, 4), make([]float32, 256), make([]byte, 1)
-			for j := 0; j < int(sizes[index]); j++ {
-				for j := range vector {
-					n, err := in.Read(buffer32)
-					if err != nil {
-						panic(err)
-					}
-					if n != len(buffer32) {
-						panic("4 bytes should have been read")
-					}
-					var bits uint32
-					for k := range buffer32 {
-						bits |= uint32(buffer32[k]) << (8 * k)
-					}
-					vector[j] = math.Float32frombits(bits)
-				}
-				n, err := in.Read(buffer8)
+			for _, index := range indexes[:3] {
+				_, err := in.Seek(int64(offset+sums[index.Index]*(4*256+1)), io.SeekStart)
 				if err != nil {
 					panic(err)
 				}
-				if n != len(buffer8) {
-					panic("1 byte should have been read")
-				}
-				cs := CS(vector, data)
-				if cs > max {
-					max, symbol = cs, buffer8[0]
+				for j := 0; j < int(sizes[index.Index]); j++ {
+					for j := range vector {
+						n, err := in.Read(buffer32)
+						if err != nil {
+							panic(err)
+						}
+						if n != len(buffer32) {
+							panic("4 bytes should have been read")
+						}
+						var bits uint32
+						for k := range buffer32 {
+							bits |= uint32(buffer32[k]) << (8 * k)
+						}
+						vector[j] = math.Float32frombits(bits)
+					}
+					n, err := in.Read(buffer8)
+					if err != nil {
+						panic(err)
+					}
+					if n != len(buffer8) {
+						panic("1 byte should have been read")
+					}
+					cs := CS(vector, data)
+					if cs > max {
+						max, symbol = cs, buffer8[0]
+					}
 				}
 			}
 
