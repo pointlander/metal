@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -26,6 +25,7 @@ import (
 
 // Mach5 is the mach 5 mode
 func Mach5() {
+	const ModelSize = 8
 	cpus := runtime.NumCPU()
 	file, err := Data.Open("books/10.txt.utf-8.bz2")
 	if err != nil {
@@ -183,8 +183,8 @@ func Mach5() {
 			A.Data = append(A.Data, float64(v))
 		}
 		u := NewMatrix(256, 1, avg...)
-		model := [8 * 1024]Bucket{}
-		fmt.Println(8 * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
+		model := [ModelSize * 1024]Bucket{}
+		fmt.Println(ModelSize * 1024 * 512 * 4.0 / (1024.0 * 1024.0 * 1024.0))
 		for i := range model {
 			z := NewMatrix(256, 1)
 			for j := 0; j < 256; j++ {
@@ -326,45 +326,47 @@ func Mach5() {
 		return
 	}
 
-	rng := rand.New(rand.NewSource(1))
-
-	model := [Scale * 1024]Entry{}
+	model := [ModelSize * 1024]Bucket{}
+	sizes := make([]uint64, ModelSize*1024)
 	in, err := os.Open("tdb.bin")
 	if err != nil {
 		panic(err)
 	}
 	defer in.Close()
-	buffer := make([]byte, 4)
+	buffer32 := make([]byte, 4)
+	buffer64 := make([]byte, 8)
 	for i := range model {
 		for j := range model[i].Vector {
-			n, err := in.Read(buffer)
+			n, err := in.Read(buffer32)
 			if err != nil {
 				panic(err)
 			}
-			if n != len(buffer) {
+			if n != len(buffer32) {
 				panic("4 bytes should have been read")
 			}
-			bits := uint32(buffer[0])
-			bits |= uint32(buffer[1]) << 8
-			bits |= uint32(buffer[2]) << 16
-			bits |= uint32(buffer[3]) << 24
+			var bits uint32
+			for i := range buffer32 {
+				bits |= uint32(buffer32[i]) << (8 * i)
+			}
 			model[i].Vector[j] = math.Float32frombits(bits)
 		}
-		for j := range model[i].Counts {
-			n, err := in.Read(buffer)
-			if err != nil {
-				panic(err)
-			}
-			if n != len(buffer) {
-				panic("4 bytes should have been read")
-			}
-			bits := uint32(buffer[0])
-			bits |= uint32(buffer[1]) << 8
-			bits |= uint32(buffer[2]) << 16
-			bits |= uint32(buffer[3]) << 24
-			model[i].Counts[j] = bits
+		var count uint64
+		n, err := in.Read(buffer64)
+		if err != nil {
+			panic(err)
 		}
-
+		if n != len(buffer64) {
+			panic("4 bytes should have been read")
+		}
+		for i := range buffer64 {
+			count |= uint64(buffer64[i]) << (8 * i)
+		}
+		sizes[i] = count
+	}
+	sums, sum := make([]uint64, len(sizes)), uint64(0)
+	for i, v := range sizes {
+		sums[i] = sum
+		sum += v
 	}
 
 	m := NewMixer()
@@ -372,64 +374,61 @@ func Mach5() {
 		m.Add(v)
 	}
 
-	sample := func(m Mixer) (int, string) {
-		value, result := 0, make([]byte, 0, 8)
+	sample := func(m Mixer) string {
+		const offset = ModelSize * 1024 * (4*256 + 1*8)
+		result := make([]byte, 0, 8)
 		for i := 0; i < 33; i++ {
-			vector := m.Mix()
-			distro := vector.Sum()
+			data := m.Mix().Sum().Data
 			index, max := 0, float32(0.0)
 			for i := range model {
-				isZero := true
-				for _, v := range model[i].Counts {
-					if v != 0 {
-						isZero = false
-						break
-					}
-				}
-				if isZero {
+				if sizes[i] == 0 {
 					continue
 				}
-				cs := CS(model[i].Vector[:], distro.Data)
+				cs := CS(model[i].Vector[:], data)
 				if cs > max {
 					max, index = cs, i
 				}
 			}
-			x := NewMatrix(len(model[index].Counts), 1)
-			for _, v := range model[index].Counts {
-				value += int(v)
-				x.Data = append(x.Data, float64(v))
+			_, err := in.Seek(int64(offset+sums[index]*(4*256+1)), io.SeekStart)
+			if err != nil {
+				panic(err)
 			}
-			x = x.Softmax(1)
-			sum, selected, symbol := float32(0.0), rng.Float32(), 0
-			for i, v := range x.Data {
-				sum += float32(v)
-				if selected < sum {
-					symbol = i
-					break
+			max, symbol := 0.0, byte(0)
+			buffer32, vector, buffer8 := make([]byte, 4), make([]float32, 256), make([]byte, 1)
+			for j := 0; j < int(sizes[index]); j++ {
+				for j := range vector {
+					n, err := in.Read(buffer32)
+					if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic("4 bytes should have been read")
+					}
+					var bits uint32
+					for k := range buffer32 {
+						bits |= uint32(buffer32[k]) << (8 * k)
+					}
+					vector[j] = math.Float32frombits(bits)
+				}
+				n, err := in.Read(buffer8)
+				if err != nil {
+					panic(err)
+				}
+				if n != len(buffer8) {
+					panic("1 byte should have been read")
+				}
+				cs := CS(vector, data)
+				if cs > max {
+					max, symbol = cs, buffer8[0]
 				}
 			}
 
-			fmt.Printf("%d %s\n", symbol, strconv.Quote(string(byte(symbol))))
-			m.Add(byte(symbol))
-			result = append(result, byte(symbol))
+			fmt.Printf("%d %s\n", symbol, strconv.Quote(string(symbol)))
+			m.Add(symbol)
+			result = append(result, symbol)
 		}
-		return value, string(result)
+		return string(result)
 	}
-	type Result struct {
-		Result string
-		Value  int
-	}
-	results := make([]Result, 10)
-	for i := range results {
-		value, result := sample(m.Copy())
-		results[i].Value = value
-		results[i].Result = result
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Value > results[j].Value
-	})
-	for _, r := range results {
-		fmt.Println(r.Value, r.Result)
-		fmt.Println()
-	}
+	result := sample(m.Copy())
+	fmt.Println(result)
 }
